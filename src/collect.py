@@ -31,17 +31,6 @@ def getMatchTimeline(matchId):
     response = requests.get(url, headers={'X-Riot-Token': API_KEY})
     response.raise_for_status()
     return response.json()
-    
-def findOpponent(participant):
-    for p in participant:
-
-        if p["puuid"] == PUUID:
-            your_position = p["teamPosition"]
-            your_team_id = p["teamId"]
-            break
-    for p in participant:
-        if p["teamPosition"] == your_position and p["teamId"] != your_team_id:
-            return p["riotIdGameName"] + "#" + p["riotIdTagline"]
         
 def matchToRow(detail):
       info = detail["info"]
