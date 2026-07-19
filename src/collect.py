@@ -12,25 +12,37 @@ load_dotenv()
 API_KEY = os.getenv("RIOT_API_KEY")
 PUUID = os.getenv("PUUID")
 
+def riotGet(url, params=None):
+    for attempt in range(3):
+        response = requests.get(url, headers={"X-Riot-Token": API_KEY}, params=params)
+
+        if response.status_code == 429:
+            wait = int(response.headers.get("Retry-After", 15))
+            print(f"Rate limited, waiting {wait}s (attempt {attempt + 1}/3)")
+            time.sleep(wait)
+            continue
+        
+        response.raise_for_status()
+        return response.json()
+    
+    raise requests.exceptions.RequestException(f"Failed to get {url} after 3 attempts")
+
+
 
 def getMatchIds(puuid, count=20, start=0):
     url = f"https://americas.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids"
     params = {"count": count, "queue": 420, "start": start}  # 420 = ranked solo/duo
-    response = requests.get(url, headers={"X-Riot-Token": API_KEY}, params=params)
-    response.raise_for_status()
-    return response.json()
+    response = riotGet(url, params=params)
+    return response
 
 def getMatchDetails(matchId):
     url = f"https://americas.api.riotgames.com/lol/match/v5/matches/{matchId}"
-    response = requests.get(url, headers={"X-Riot-Token": API_KEY})
-    response.raise_for_status()
-    return response.json()
+    return riotGet(url)
+
 
 def getMatchTimeline(matchId):
     url = f"https://americas.api.riotgames.com/lol/match/v5/matches/{matchId}/timeline"
-    response = requests.get(url, headers={'X-Riot-Token': API_KEY})
-    response.raise_for_status()
-    return response.json()
+    return riotGet(url)
         
 def matchToRow(detail):
       info = detail["info"]
@@ -155,8 +167,7 @@ def main():
             
         except requests.exceptions.RequestException:
             print(f"Error fetching details for {matchId}, skipping")
-            continue  
-        time.sleep(2.5)                                          
+        finally: time.sleep(2.5)                                          
     cur.close()
     conn.close()
 
