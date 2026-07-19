@@ -131,8 +131,9 @@ def main():
             continue  
         try:
             detail = getMatchDetails(matchId)
-            if detail["info"]["participants"][0]["gameEndedInSurrender"]:
+            if detail["info"]["participants"][0]["gameEndedInEarlySurrender"]:
                 print(f"Skipping remake {matchId}")
+                continue
             timeline = getMatchTimeline(matchId)
             
             cur.execute(
@@ -169,6 +170,10 @@ def main():
             
         except requests.exceptions.RequestException:
             print(f"Error fetching details for {matchId}, skipping")
+        except psycopg2.Error as e:
+            print(f"Database error on {matchId}, rolling back: {e}")
+            conn.rollback()
+
         finally: 
             time.sleep(2.5)                                          
     cur.close()
