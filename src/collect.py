@@ -131,6 +131,8 @@ def main():
             continue  
         try:
             detail = getMatchDetails(matchId)
+            if detail["info"]["participants"][0]["gameEndedInSurrender"]:
+                print(f"Skipping remake {matchId}")
             timeline = getMatchTimeline(matchId)
             
             cur.execute(
@@ -167,7 +169,8 @@ def main():
             
         except requests.exceptions.RequestException:
             print(f"Error fetching details for {matchId}, skipping")
-        finally: time.sleep(2.5)                                          
+        finally: 
+            time.sleep(2.5)                                          
     cur.close()
     conn.close()
 
