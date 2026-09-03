@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "League Tracker",
-  description: "Personal mid-lane analytics dashboard — match history, matchup patterns, and ML win indicators.",
+  title: "LeaguesAhead",
+  description: "Prototype League of Legends analytics for a single account — which early-game leads actually precede wins.",
 };
 
 export default function RootLayout({

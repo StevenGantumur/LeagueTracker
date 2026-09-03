@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #08080a;
+  --foreground: #e9e9ec;
 }
 
 @theme inline {
@@ -12,15 +12,47 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+body {
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+
+  /* A single soft grey circle fading out to black. Painted directly on the body
+     rather than a ::before, because body's background propagates to the canvas
+     and is guaranteed to paint underneath everything -- a negative z-index
+     pseudo-element depends on stacking rules that are easy to break later.
+     `fixed` keeps the light source still while content scrolls under it. */
+  background-color: var(--background);
+  background-image: radial-gradient(
+    circle 780px at 50% 6%,
+    #3a3a42 0%,
+    #26262c 26%,
+    #141418 52%,
+    var(--background) 78%
+  );
+  background-repeat: no-repeat;
+  background-attachment: fixed;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Figures line up in columns only if they are the same width. */
+.tabular {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The page title, dimming as it descends so it sits behind the content rather
+   than competing with it. Written as plain CSS instead of Tailwind's gradient
+   utilities, which were renamed in v4 — this needs no guessing about aliases.
+   The solid `color` is the fallback: if background-clip:text is unsupported the
+   heading stays legible instead of rendering transparent. */
+.title-fade {
+  color: #6c6c76;
+  background-image: linear-gradient(to bottom, #f2f2f5 0%, #9a9aa4 42%, #4a4a53 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+@supports (background-clip: text) or (-webkit-background-clip: text) {
+  .title-fade {
+    color: transparent;
+  }
 }
