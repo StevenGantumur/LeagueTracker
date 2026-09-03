@@ -100,28 +100,55 @@ ORDER BY match_id, puuid, minute, timestamp_ms
 ```
 
 ### 2. ML notebook — `notebooks/exploration.ipynb` — **Steven's, not Claude's**
-Deliberately left alone; this is the part interviewers will ask about.
-- [ ] **State the baseline.** Majority class is ~53% — that's the number 64% has
-      to beat.
-- [ ] **Kill the single split.** 39 test rows → ±0.15 CI on accuracy; the result
-      is noise. Use stratified 5-fold CV, report mean ± std of AUC.
+Deliberately left alone; this is the part interviewers will ask about. Numbers
+below are from the current database (194 matches, patches 16.4–16.16), not the
+older 154-row dataset the original list was written against.
+
+**It will crash as written.** Fix this before anything else:
+- [ ] `diffs_df.pivot(...)` raises `ValueError: Index contains duplicate
+      entries`. Three games ended inside minute 10 or 15, and each contributes a
+      second partial frame in that minute — 30 duplicate rows. New since the
+      timeline fix. Use the `DISTINCT ON` pattern above.
+
+**The baseline is 71%, not 53%.** The most important item here:
+- [ ] A single threshold — "predict a win iff my team's gold lead at 15 is
+      positive" — scores **0.708** on 192 games. Majority class is only 0.516.
+      So 64% is not beating a weak baseline, it is losing to one line of SQL.
+      Report both numbers. A model that cannot beat a one-rule stump is a real
+      finding, and noticing it is worth more than a flattering score.
+
+**The strongest feature is missing from the model:**
+- [ ] The notebook uses only your own lane's differentials. Team gold at 15
+      separates wins from losses about twice as sharply (d = 1.26 vs 0.53) and
+      is what drives that 0.708. Add team-level and per-role features — the SQL
+      already exists in `src/api.py` (`TEAM_QUERY`, `ROLE_QUERY`).
+
+**Rigor:**
+- [ ] **Kill the single split.** ~190 rows means a ~38-game test set; the
+      confidence interval swamps the result. Stratified 5-fold CV, report
+      mean ± std of AUC.
 - [ ] **`champion_id` is a label, not a number.** LightGBM will split on
-      "champion_id > 150". `astype("category")` or drop it.
-- [ ] **Temporal split for the honest number.** Data spans patches 16.3–16.11.
-      Train on the oldest ~80%, test on the newest. Expect the score to drop —
-      that drop IS the finding.
-- [ ] Shrink the model (154 rows can't feed 100 trees × 15 leaves — hence the wall
-      of "no further splits" warnings). Try `n_estimators=50, num_leaves=7`.
-- [ ] Add a markdown note: 8 matches drop out of the pivot (no minute-15 frame) —
-      that's the remakes; selection bias is fine here but should be stated.
+      "champion_id > 150". It is also near-constant now — 119 of 194 games are
+      one champion. `astype("category")` or drop it.
+- [ ] **Temporal split**, but know what it gives you: the patch spread is
+      lopsided, ~187 games in 16.4–16.11 and 7 in 16.12–16.16, so the newest 20%
+      is a thin recent slice. Expect the score to drop — that drop IS the finding.
+- [ ] Shrink the model (190 rows cannot feed 100 trees × 15 leaves — hence the
+      wall of "no further splits" warnings). Try `n_estimators=50, num_leaves=7`,
+      and fit a plain logistic regression alongside it. On this much data it may
+      well win, which is itself worth reporting.
+- [ ] Note the dropouts: 192 of 194 games have a minute-15 frame; two ended
+      before then. Selection bias is fine here but should be stated.
+
+**Housekeeping:**
 - [ ] Remove the duplicate groupby cell.
 - [ ] Move the hardcoded PUUID out of the SQL strings and into `os.getenv`.
 - [ ] Once the real numbers exist, update the **Analysis** section of `README.md`
-      — it currently describes the method and caveats but quotes no results.
+      — it describes the method and caveats but quotes no results.
 
 ### 3. Housekeeping
-- [ ] Nothing is committed yet — the whole session is sitting in the working tree.
-      Review with `git diff` and commit.
+- [x] Committed and pushed to `main` (7 commits, 2026-09-02). `README.md` is
+      deliberately untracked — Steven is writing it himself.
 - [ ] Optional: rebuild `venv/` (deps currently live in the global Python 3.14).
       `requirements.txt` is a full freeze and does not include `pytest`; that is
       in `requirements-dev.txt`.
