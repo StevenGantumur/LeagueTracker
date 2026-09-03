@@ -1,5 +1,6 @@
 import requests
 import os
+import sys
 import json
 # For pagination
 import time
@@ -27,6 +28,28 @@ def riotGet(url, params=None):
     
     raise requests.exceptions.RequestException(f"Failed to get {url} after 3 attempts")
 
+
+
+def getAccount(puuid):
+    """Resolve a PUUID to its Riot ID.
+
+    Match data carries only PUUIDs -- the displayed name lives in account-v1 --
+    so it has to be fetched separately and cached.
+    """
+    url = f"https://americas.api.riotgames.com/riot/account/v1/accounts/by-puuid/{puuid}"
+    return riotGet(url)
+
+
+def upsertPlayer(cur, puuid, account):
+    """Store the Riot ID, refreshing it if the player has since renamed."""
+    cur.execute(
+        "INSERT INTO players (puuid, game_name, tag_line) VALUES (%s, %s, %s) "
+        "ON CONFLICT (puuid) DO UPDATE SET "
+        "  game_name = EXCLUDED.game_name, "
+        "  tag_line  = EXCLUDED.tag_line, "
+        "  updated_at = now()",
+        (puuid, account["gameName"], account["tagLine"]),
+    )
 
 
 def getMatchIds(puuid, count=20, start=0):
@@ -92,11 +115,16 @@ def timelinesToRows(timeline):
 
     rows = []
     for frame in timeline["info"]["frames"]:
-        minute = frame["timestamp"] // 60000
+        # Store the raw timestamp, not timestamp // 60000. Riot emits a frame
+        # every 60,000ms plus one partial frame at game end; bucketing by minute
+        # gave that final frame the same key as the last full frame, and the
+        # insert's ON CONFLICT DO NOTHING then discarded it. `minute` is a
+        # generated column derived from this value.
+        timestamp_ms = frame["timestamp"]
         for pid_str, pframe in frame["participantFrames"].items():
             puuid = id_to_puuid[int(pid_str)]
             rows.append((
-                match_id, puuid, minute,
+                match_id, puuid, timestamp_ms,
                 pframe["totalGold"],
                 pframe["minionsKilled"],
                 pframe["jungleMinionsKilled"],
@@ -116,15 +144,30 @@ def getAllMatchIds(puuid, target =200):
         start+= 100
         time.sleep(1.3)
     return all_ids[:target]
-def main():
+def main(target=None):
+    # How many match IDs to pull. Remakes are skipped on insert, so the number of
+    # rows that actually land is target minus however many remakes fall in the
+    # window. Re-running with a higher target tops up: matches already stored are
+    # skipped, so only the new ones cost API calls.
+    if target is None:
+        target = int(os.getenv("MATCH_TARGET", "200"))
+
     conn = psycopg2.connect(os.getenv("DATABASE_URL"))
     cur = conn.cursor()
-    
+
+    try:
+        upsertPlayer(cur, PUUID, getAccount(PUUID))
+        conn.commit()
+    except requests.exceptions.RequestException as e:
+        # A missing display name is cosmetic -- never block collection on it.
+        print(f"Could not resolve Riot ID: {e}")
+        conn.rollback()
+
     cur.execute("SELECT match_id FROM matches")
     existing = {row[0] for row in cur.fetchall()}
-    
-    matchIds = getAllMatchIds(PUUID, target=200)
-    print(f"Got {len(matchIds)} match IDs")
+
+    matchIds = getAllMatchIds(PUUID, target=target)
+    print(f"Got {len(matchIds)} match IDs ({len(existing)} already stored)")
 
     for matchId in matchIds:
         if matchId in existing:
@@ -158,10 +201,10 @@ def main():
 
             cur.executemany(
                 "INSERT INTO participant_timelines ("
-                "  match_id, puuid, minute, total_gold, minions, jungle_cs, level, xp"
+                "  match_id, puuid, timestamp_ms, total_gold, minions, jungle_cs, level, xp"
                 ") VALUES ("
                 "  %s, %s, %s, %s, %s, %s, %s, %s"
-                ") ON CONFLICT (match_id, puuid, minute) DO NOTHING",
+                ") ON CONFLICT (match_id, puuid, timestamp_ms) DO NOTHING",
                 timelinesToRows(timeline)
             ) 
 
@@ -180,5 +223,5 @@ def main():
     conn.close()
 
 if __name__ == "__main__":
-    main()
+    main(int(sys.argv[1]) if len(sys.argv) > 1 else None)
 
