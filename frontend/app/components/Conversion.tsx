@@ -27,7 +27,7 @@ function Side({
       >
         {percent(rate)}
       </div>
-      {/* A proportional rule reads faster than the number alone. */}
+      {/* Proportional rule, reads faster than the number alone. */}
       <div className="mt-2 h-px w-full bg-white/[0.07]">
         <div
           className={`h-px ${tone === "up" ? "bg-emerald-300/60" : "bg-rose-300/40"}`}

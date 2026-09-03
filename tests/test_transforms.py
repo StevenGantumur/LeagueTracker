@@ -1,11 +1,9 @@
-"""Tests for the pure row-building functions in src/collect.py.
+"""Tests for the row-building functions in src/collect.py.
 
-These take a Riot API response and return tuples ready for psycopg2 -- no
-network, no database, no mocking required.
+Pure functions: Riot response in, psycopg2 tuples out. No network or database.
 
-The fixtures in tests/fixtures/ mirror the match-v5 response shape. Regenerate
-them from a real match with `python tests/capture_fixture.py <match_id>` once a
-Riot API key is available.
+Fixtures mirror the match-v5 shape. Replace them with a real match via
+`python tests/capture_fixture.py <match_id>`.
 """
 
 import json
@@ -44,8 +42,7 @@ def test_match_row_field_order_matches_insert(match):
 
 
 def test_match_row_picks_the_winning_team(match):
-    # Team 200 wins in the fixture; flipping it must flip the stored winner
-    # rather than defaulting to whichever team is listed first.
+    # Flipping the winner must flip the stored value, not default to team[0].
     match["info"]["teams"] = [{"teamId": 100, "win": True}, {"teamId": 200, "win": False}]
     assert matchToRow(match)[5] == 100
 
@@ -82,11 +79,10 @@ def test_row_count_is_frames_times_participants(timeline):
 
 
 def test_final_partial_frame_survives(timeline):
-    """Regression test for the frame that used to be silently dropped.
+    """The frame that used to get dropped.
 
-    The fixture ends at 32:33, so its last two frames are at 1_920_000ms and
-    1_953_000ms. Both floor to minute 32; keying the table on minute meant the
-    second one collided with the first and ON CONFLICT DO NOTHING discarded it.
+    Fixture ends at 32:33, so the last two frames both floor to minute 32. Keying
+    on minute meant the second collided with the first and was discarded.
     """
     rows = timelinesToRows(timeline)
     keys = {(match_id, puuid, ts) for match_id, puuid, ts, *_ in rows}
@@ -100,12 +96,10 @@ def test_final_partial_frame_survives(timeline):
 
 
 def test_timestamps_are_raw_not_bucketed(timeline):
-    """Timestamps must be passed through untouched.
+    """Timestamps pass through untouched.
 
-    Deliberately not asserting that frames land on exact multiples of 60000 --
-    real Riot data drifts by a few milliseconds (60000, 60001, 60002, ...), so
-    that assumption would fail the moment these fixtures are replaced with a
-    real captured match.
+    Not asserting exact multiples of 60000: real data drifts (60000, 60001, ...),
+    so that would break as soon as these fixtures come from a real match.
     """
     rows = timelinesToRows(timeline)
     source = {f["timestamp"] for f in timeline["info"]["frames"]}

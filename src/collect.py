@@ -31,17 +31,13 @@ def riotGet(url, params=None):
 
 
 def getAccount(puuid):
-    """Resolve a PUUID to its Riot ID.
-
-    Match data carries only PUUIDs -- the displayed name lives in account-v1 --
-    so it has to be fetched separately and cached.
-    """
+    """Resolve a PUUID to its Riot ID. Match data only carries PUUIDs."""
     url = f"https://americas.api.riotgames.com/riot/account/v1/accounts/by-puuid/{puuid}"
     return riotGet(url)
 
 
 def upsertPlayer(cur, puuid, account):
-    """Store the Riot ID, refreshing it if the player has since renamed."""
+    """Store the Riot ID, refreshing it if they've renamed."""
     cur.execute(
         "INSERT INTO players (puuid, game_name, tag_line) VALUES (%s, %s, %s) "
         "ON CONFLICT (puuid) DO UPDATE SET "
@@ -115,11 +111,9 @@ def timelinesToRows(timeline):
 
     rows = []
     for frame in timeline["info"]["frames"]:
-        # Store the raw timestamp, not timestamp // 60000. Riot emits a frame
-        # every 60,000ms plus one partial frame at game end; bucketing by minute
-        # gave that final frame the same key as the last full frame, and the
-        # insert's ON CONFLICT DO NOTHING then discarded it. `minute` is a
-        # generated column derived from this value.
+        # Raw timestamp, not timestamp // 60000. There's a partial frame at game
+        # end that bucketing collapsed into the last full minute, where ON
+        # CONFLICT DO NOTHING ate it. `minute` is generated from this.
         timestamp_ms = frame["timestamp"]
         for pid_str, pframe in frame["participantFrames"].items():
             puuid = id_to_puuid[int(pid_str)]
@@ -145,10 +139,8 @@ def getAllMatchIds(puuid, target =200):
         time.sleep(1.3)
     return all_ids[:target]
 def main(target=None):
-    # How many match IDs to pull. Remakes are skipped on insert, so the number of
-    # rows that actually land is target minus however many remakes fall in the
-    # window. Re-running with a higher target tops up: matches already stored are
-    # skipped, so only the new ones cost API calls.
+    # Match IDs to pull. Remakes are skipped on insert, so fewer rows land than
+    # this. Re-running with a higher number tops up; stored matches cost nothing.
     if target is None:
         target = int(os.getenv("MATCH_TARGET", "200"))
 
@@ -159,7 +151,7 @@ def main(target=None):
         upsertPlayer(cur, PUUID, getAccount(PUUID))
         conn.commit()
     except requests.exceptions.RequestException as e:
-        # A missing display name is cosmetic -- never block collection on it.
+        # Cosmetic. Don't block collection on it.
         print(f"Could not resolve Riot ID: {e}")
         conn.rollback()
 

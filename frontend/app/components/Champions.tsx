@@ -3,8 +3,7 @@
 import { percent, type Champion } from "../lib/api"
 import { SectionHeading } from "./SectionHeading"
 
-// Below this many games a win rate is mostly noise — a 3-game champion at 100%
-// should not read like a strength. Shown greyed rather than hidden.
+// Under this, a win rate is mostly noise. Greyed rather than hidden.
 const CONFIDENT_SAMPLE = 10
 
 export function ChampionFilter({

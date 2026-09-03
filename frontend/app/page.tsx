@@ -34,7 +34,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Loaded once — these do not depend on the champion filter.
+  // Loaded once. Not affected by the champion filter.
   useEffect(() => {
     getPlayer()
       .then(setPlayer)
@@ -46,7 +46,7 @@ export default function Home() {
     fetchChampionNames().then(setNames).catch(() => {})
   }, [])
 
-  // Refetched whenever the champion filter changes.
+  // Refetched on filter change.
   useEffect(() => {
     getMatches(championId).then(setMatches).catch(() => setMatches([]))
     getWinFactors(championId).then(setFactors).catch(() => setFactors(null))

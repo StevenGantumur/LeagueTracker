@@ -16,11 +16,9 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 
-  /* A single soft grey circle fading out to black. Painted directly on the body
-     rather than a ::before, because body's background propagates to the canvas
-     and is guaranteed to paint underneath everything -- a negative z-index
-     pseudo-element depends on stacking rules that are easy to break later.
-     `fixed` keeps the light source still while content scrolls under it. */
+  /* Grey circle fading to black. On body rather than a ::before: body's
+     background propagates to the canvas, so it always paints underneath.
+     A negative z-index pseudo-element is easier to break later. */
   background-color: var(--background);
   background-image: radial-gradient(
     circle 780px at 50% 6%,
@@ -33,17 +31,15 @@ body {
   background-attachment: fixed;
 }
 
-/* Figures line up in columns only if they are the same width. */
+/* Columns only line up if the figures are the same width. */
 .tabular {
   font-family: var(--font-geist-mono), ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
 }
 
-/* The page title, dimming as it descends so it sits behind the content rather
-   than competing with it. Written as plain CSS instead of Tailwind's gradient
-   utilities, which were renamed in v4 — this needs no guessing about aliases.
-   The solid `color` is the fallback: if background-clip:text is unsupported the
-   heading stays legible instead of rendering transparent. */
+/* Title fade. Plain CSS because Tailwind renamed its gradient utilities in v4.
+   The solid `color` is the fallback -- without it the heading renders invisible
+   where background-clip:text isn't supported. */
 .title-fade {
   color: #6c6c76;
   background-image: linear-gradient(to bottom, #f2f2f5 0%, #9a9aa4 42%, #4a4a53 100%);

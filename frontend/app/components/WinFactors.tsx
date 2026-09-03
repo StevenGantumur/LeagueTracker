@@ -57,7 +57,7 @@ function Factor({ factor, scale }: { factor: WinFactor; scale: number }) {
           </span>
         </div>
 
-        {/* Hairline whose length encodes the effect size — the bar chart, minus the chart. */}
+        {/* Length encodes the effect size. */}
         <span
           className="absolute bottom-0 left-0 h-px bg-white/25 transition-all"
           style={{ width: `${width}%` }}

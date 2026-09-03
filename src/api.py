@@ -10,22 +10,17 @@ from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
-# Games shorter than this are remakes -- an early surrender inside the first few
-# minutes. They are excluded at collection time now, but the endpoint filters
-# them too so any rows predating that fix stay out of the response.
+# Remakes. Skipped at collect time too, but filtered here so older rows stay out.
 REMAKE_DURATION_SECONDS = 300
 
-# Below this many games on each side, a difference of means says almost nothing:
-# one game can swing the average, and the standard deviation is unstable. Factors
-# under this threshold are withheld rather than shown with a meaningless number
-# attached -- most relevant when filtering to a rarely-played champion.
+# Below this, one game swings the average and the stdev is unstable. Mostly hit
+# when filtering to a rarely-played champion.
 MIN_GAMES_PER_SIDE = 5
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # One pool for the process rather than a fresh TCP connection and auth
-    # handshake per request.
+    # One pool per process, not a connection per request.
     app.state.pool = psycopg2.pool.ThreadedConnectionPool(
         minconn=1, maxconn=10, dsn=os.getenv("DATABASE_URL")
     )
@@ -45,10 +40,9 @@ app.add_middleware(
 
 @contextmanager
 def get_cursor():
-    """Lease a connection from the pool and always return it.
+    """Lease a connection and always give it back.
 
-    The previous version called conn.close() after the query, so a failing query
-    raised straight past it and leaked the connection.
+    The old version called close() after the query, so a failing query leaked it.
     """
     conn = app.state.pool.getconn()
     try:
@@ -94,7 +88,7 @@ def player():
         raise HTTPException(status_code=503, detail="database unavailable")
 
     if row is None:
-        # Collection has run but the Riot ID lookup failed or has never run.
+        # Riot ID lookup hasn't run, or failed.
         return {"riot_id": None, "games": games, "wins": wins, "losses": games - wins}
 
     game_name, tag_line, updated_at = row
@@ -150,8 +144,7 @@ def champions(limit: int = 50):
             "kills": round(float(k), 1),
             "deaths": round(float(d_), 1),
             "assists": round(float(a), 1),
-            # Deaths of zero would divide by zero; KDA is conventionally reported
-            # as "perfect" there, so fall back to (K+A) rather than infinity.
+            # 0 deaths divides by zero; fall back to K+A.
             "kda": round((float(k) + float(a)) / float(d_), 2) if float(d_) else round(float(k) + float(a), 2),
             "cs": round(float(cs), 1),
             "vision_score": round(float(vision), 1),
@@ -162,11 +155,10 @@ def champions(limit: int = 50):
 
 @app.get("/stats/conversion")
 def conversion():
-    """How often a lead at 15 becomes a win, and how often a deficit is overturned.
+    """Win rate conditioned on the state at 15 minutes.
 
-    Effect sizes say how far apart wins and losses look. This says something more
-    directly useful: given the state at minute 15, how often does the game
-    actually go your way? It is the same data read as a conditional win rate.
+    Same data as win-factors, read as a conditional win rate instead of an
+    effect size.
     """
     params = {
         "minutes": [15],
@@ -225,10 +217,8 @@ def matches(limit: int = 20, champion_id: int | None = None):
     ]
     try:
         with get_cursor() as cur:
-            # Joining matches serves two purposes: it exposes game_creation for a
-            # real chronological sort (ordering by the match_id string only
-            # happens to match chronology today), and game_duration for the
-            # remake filter.
+            # Join matches for game_creation (match_id only sorts chronologically
+            # by luck) and for game_duration.
             cur.execute(
                 """
                 SELECT p.match_id, p.champion_id, p.kills, p.deaths, p.assists,
@@ -255,18 +245,13 @@ def matches(limit: int = 20, champion_id: int | None = None):
     return [dict(zip(columns, row)) for row in rows]
 
 
-# --- win factors ---------------------------------------------------------
-#
-# Everything reported here is measured strictly before minute 15, so these are
-# leading indicators rather than consequences of having already won. End-of-game
-# stats (final gold, kills, damage) are deliberately excluded: a won game
-# produces more of all of them, so ranking them as "win factors" would be
-# reverse causation dressed up as insight.
+# --- win factors ---
+# Pre-15-minute metrics only. End-of-game stats correlate with winning because
+# you won, so ranking them would be reverse causation.
 
-# One row per player per minute. A game ending mid-minute emits a second partial
-# frame inside that minute, so DISTINCT ON ordered by timestamp_ms keeps the
-# regular 60s frame. Note frames are NOT on exact 60000ms boundaries -- Riot's
-# timestamps drift (60000, 60001, ...) -- so selection must go through `minute`.
+# One row per player per minute. Games ending mid-minute emit an extra partial
+# frame, so DISTINCT ON keeps the regular one. Timestamps drift off the 60000ms
+# boundary (60000, 60001, ...), so filter on `minute`, never a computed timestamp.
 FRAMES_CTE = """
     WITH frames AS (
         SELECT DISTINCT ON (match_id, puuid, minute)
@@ -296,8 +281,7 @@ PERSONAL_QUERY = FRAMES_CTE + """
       AND (%(champion_id)s IS NULL OR me_p.champion_id = %(champion_id)s)
 """
 
-# All five players summed, so it captures the state of the whole map rather
-# than one matchup.
+# All five players summed.
 TEAM_QUERY = FRAMES_CTE + """
     , team AS (
         SELECT f.match_id, p.team_id, f.minute,
@@ -318,7 +302,7 @@ TEAM_QUERY = FRAMES_CTE + """
       AND (%(champion_id)s IS NULL OR me.champion_id = %(champion_id)s)
 """
 
-# Each role's own matchup, to show which lane's early state tracks your results.
+# Each role's own matchup.
 ROLE_QUERY = FRAMES_CTE + """
     SELECT me.match_id, me.win, ally_f.minute, ally.team_position,
            ally_f.total_gold - enemy_f.total_gold AS role_gold_diff
@@ -335,9 +319,8 @@ ROLE_QUERY = FRAMES_CTE + """
       AND (%(champion_id)s IS NULL OR me.champion_id = %(champion_id)s)
 """
 
-# Label, unit, group, and a concrete thing to do about it. Tips describe what
-# tends to accompany wins in this player's own games -- correlation, not a
-# guarantee -- so they are phrased as levers to try, not rules.
+# Label, unit, group, tip. These are correlations, so tips are phrased as things
+# to try rather than rules.
 FACTOR_META = {
     "team_gold_diff": (
         "Team gold lead", "gold", "team",
@@ -420,11 +403,10 @@ GROUP_LABELS = {
 
 
 def _cohens_d(wins, losses):
-    """Standardised difference between the two groups.
+    """Standardised difference between the groups.
 
-    Raw deltas are not comparable across metrics -- 750 gold means nothing next
-    to 14 CS. Dividing by the pooled standard deviation puts every metric on one
-    scale so they can be ranked. Roughly: 0.2 small, 0.5 medium, 0.8 large.
+    750 gold and 14 CS aren't comparable. Dividing by the pooled stdev puts them
+    on one scale. Roughly 0.2 small, 0.5 medium, 0.8 large.
     """
     if len(wins) < 2 or len(losses) < 2:
         return None
@@ -437,10 +419,10 @@ def _cohens_d(wins, losses):
 
 
 def _standard_error(n_w, n_l):
-    """Approximate standard error of Cohen's d, for an honest uncertainty band.
+    """Rough standard error of d.
 
-    Without it the ranking looks more precise than it is: at ~190 games the
-    error is around +/-0.15, which is wider than the gap between several lanes.
+    At ~190 games it lands near 0.15, wider than the gap between several lanes,
+    so the ranking is less precise than it looks.
     """
     if n_w < 2 or n_l < 2:
         return None
@@ -471,9 +453,8 @@ def win_factors(minutes: str = "10,15", champion_id: int | None = None):
             team = cur.fetchall()
             cur.execute(ROLE_QUERY, params)
             roles = cur.fetchall()
-            # "Your lane" follows whatever role was actually played that game,
-            # which is not always the same one -- surface the mix so the lane-by
-            # -lane numbers are not mistaken for the personal ones.
+            # "Your lane" follows whatever role was played that game, so surface
+            # the mix rather than let it be read as always mid.
             cur.execute(
                 """SELECT p.team_position, count(*)
                    FROM participants p JOIN matches m ON m.match_id = p.match_id

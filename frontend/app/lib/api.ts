@@ -94,8 +94,8 @@ export const getMatches = (championId: number | null) =>
 export const getWinFactors = (championId: number | null) =>
   get<WinFactors>(`/stats/win-factors?${championParam(championId)}`)
 
-// Data Dragon is Riot's free static-data CDN — champion.json maps numeric
-// champion keys to display names, keyed by the current patch version.
+// Data Dragon is Riot's static-data CDN. champion.json maps numeric keys to
+// names, per patch version.
 export async function fetchChampionNames(): Promise<Record<number, string>> {
   const versions: string[] = await fetch(
     "https://ddragon.leagueoflegends.com/api/versions.json"
